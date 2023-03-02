@@ -1,0 +1,7 @@
+server:
+  port: 15042
+spring:
+  redis:
+    client-type: lettuce
+    host:
+    password: 
