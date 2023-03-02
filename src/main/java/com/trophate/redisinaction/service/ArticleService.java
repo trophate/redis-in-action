@@ -3,6 +3,7 @@ package com.trophate.redisinaction.service;
 import com.trophate.redisinaction.dto.ArticleDTO;
 import com.trophate.redisinaction.dto.Page;
 import com.trophate.redisinaction.dto.VoteDTO;
+import com.trophate.redisinaction.enums.VoteType;
 import com.trophate.redisinaction.utils.NumberGenerator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -15,6 +16,8 @@ import java.util.concurrent.TimeUnit;
 
 @Service
 public class ArticleService {
+
+    private final int SCORE_CONSTANT = 43200;
 
     private final RedisTemplate<Object, Object> redisTemplate;
 
@@ -37,26 +40,65 @@ public class ArticleService {
         redisTemplate.opsForZSet().add("time:", articleKey, now);
         // 分值排序
         redisTemplate.opsForZSet().add("score:", articleKey, now);
-        // 投票记录
-        String votedKey = "voted:" + articleId;
-        String userKey = "user:" + dto.getPosterId();
-        redisTemplate.opsForSet().add(votedKey, userKey);
-        redisTemplate.expire(votedKey, 7, TimeUnit.DAYS);
+        // 支持票记录
+        String supportKey = "support:" + articleId;
+        String posterKey = "poster:" + dto.getPosterId();
+        redisTemplate.opsForSet().add(supportKey, posterKey);
+        redisTemplate.expire(supportKey, 7, TimeUnit.DAYS);
+        // 反对票记录
+        String againstKey = "against:" + articleId;
+        redisTemplate.opsForSet().add(againstKey, posterKey);
+        redisTemplate.expire(againstKey, 7, TimeUnit.DAYS);
     }
 
-    public void vote(VoteDTO dto) {
+    public void support(VoteDTO dto) {
         String articleKey = "article:" + dto.getArticleId();
         LocalDateTime now = LocalDateTime.now();
         now = now.minusWeeks(1);
         Double nowTimestamp = ((Long) now.toInstant(ZoneOffset.ofHours(8)).toEpochMilli()).doubleValue();
-        String votedKey = "voted:" + dto.getArticleId();
+        String supportKey = "support:" + dto.getArticleId();
         String userKey = "user:" + dto.getVoterId();
         if (redisTemplate.opsForZSet().score("time:", articleKey).compareTo(nowTimestamp) > 0
-                && !redisTemplate.opsForSet().isMember(votedKey, userKey)) {
-            redisTemplate.opsForSet().add(votedKey, userKey);
-            redisTemplate.opsForZSet().incrementScore("score:", articleKey, 43200);
+                && !redisTemplate.opsForSet().isMember(supportKey, userKey) && !voteChange(dto, VoteType.SUPPORT.getCode())) {
+            redisTemplate.opsForSet().add(supportKey, userKey);
+            redisTemplate.opsForZSet().incrementScore("score:", articleKey, SCORE_CONSTANT);
             redisTemplate.opsForHash().increment(articleKey, "votes", 1);
         }
+    }
+
+    public void against(VoteDTO dto) {
+        String articleKey = "article:" + dto.getArticleId();
+        LocalDateTime now = LocalDateTime.now();
+        now = now.minusWeeks(1);
+        Double nowTimestamp = ((Long) now.toInstant(ZoneOffset.ofHours(8)).toEpochMilli()).doubleValue();
+        String againstKey = "against:" + dto.getArticleId();
+        String userKey = "user:" + dto.getVoterId();
+        if (redisTemplate.opsForZSet().score("time:", articleKey).compareTo(nowTimestamp) > 0
+                && !redisTemplate.opsForSet().isMember(againstKey, userKey) && !voteChange(dto, VoteType.AGAINST.getCode())) {
+            redisTemplate.opsForSet().add(againstKey, userKey);
+            redisTemplate.opsForZSet().incrementScore("score:", articleKey, -SCORE_CONSTANT);
+            redisTemplate.opsForHash().increment(articleKey, "votes", 1);
+        }
+    }
+
+    private boolean voteChange(VoteDTO dto, int voteType) {
+        String supportKey = "support:" + dto.getArticleId();
+        String againstKey = "against:" + dto.getArticleId();
+        String userKey = "user:" + dto.getVoterId();
+        String articleKey = "article:" + dto.getArticleId();
+        boolean res;
+        if (voteType == VoteType.SUPPORT.getCode()) {
+            res = redisTemplate.opsForSet().move(againstKey, userKey, supportKey);
+            if (res) {
+                redisTemplate.opsForZSet().incrementScore("score:", articleKey, SCORE_CONSTANT * 2);
+            }
+        } else {
+            res = redisTemplate.opsForSet().move(supportKey, userKey, againstKey);
+            if (res) {
+                redisTemplate.opsForZSet().incrementScore("score:", articleKey, -SCORE_CONSTANT * 2);
+            }
+        }
+        return res;
     }
 
     public Set<?> getPageByVote(Page page) {

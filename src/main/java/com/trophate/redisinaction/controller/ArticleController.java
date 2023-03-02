@@ -32,14 +32,26 @@ public class ArticleController {
     }
 
     /**
-     * 投票
+     * 支持
      *
      * @param dto 投票数据
      * @return Result
      */
-    @PostMapping("/vote")
-    public Result vote(@RequestBody VoteDTO dto) {
-        articleService.vote(dto);
+    @PostMapping("/support")
+    public Result support(@RequestBody VoteDTO dto) {
+        articleService.support(dto);
+        return Result.success();
+    }
+
+    /**
+     * 反对
+     *
+     * @param dto 投票数据
+     * @return Result
+     */
+    @PostMapping("/against")
+    public Result against(@RequestBody VoteDTO dto) {
+        articleService.against(dto);
         return Result.success();
     }
 
