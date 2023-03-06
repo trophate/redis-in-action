@@ -4,4 +4,8 @@ spring:
   redis:
     client-type: lettuce
     host:
-    password: 
+    password:
+  security:
+    user:
+      name: admin
+      password: 1234567
